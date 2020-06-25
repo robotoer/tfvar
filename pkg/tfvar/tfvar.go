@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/cockroachdb/errors"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/hashicorp/terraform/configs"
 	"github.com/zclconf/go-cty/cty"
@@ -17,8 +18,10 @@ import (
 //      type = string
 //    }
 type Variable struct {
-	Name  string
-	Value cty.Value
+	Name           string
+	Value          cty.Value
+	Description    string
+	DescriptionSet bool
 
 	parsingMode configs.VariableParsingMode
 }
@@ -36,8 +39,10 @@ func Load(dir string) ([]Variable, error) {
 
 	for _, v := range modules.Variables {
 		variables = append(variables, Variable{
-			Name:  v.Name,
-			Value: v.Default,
+			Name:           v.Name,
+			Value:          v.Default,
+			Description:    v.Description,
+			DescriptionSet: v.DescriptionSet,
 
 			parsingMode: v.ParsingMode,
 		})
@@ -62,7 +67,7 @@ func WriteAsEnvVars(w io.Writer, vars []Variable) error {
 		b = bytes.TrimSuffix(b, []byte(`"`))
 
 		if we == nil {
-			_, err := fmt.Fprintf(w, "export %s%s='%s'\n", varEnvPrefix, v.Name, string(b))
+			_, err := fmt.Fprintf(w, "# %s\nexport %s%s='%s'\n", v.Description, varEnvPrefix, v.Name, string(b))
 			we = errors.Wrap(err, "tfvar: unexpected writing export")
 		}
 	}
@@ -77,7 +82,34 @@ func WriteAsTFVars(w io.Writer, vars []Variable) error {
 	rootBody := f.Body()
 
 	for _, v := range vars {
+		commentText := ""
+		if v.Value.IsNull() {
+			commentText += "## REQUIRED\n"
+		} else {
+			commentText += "## OPTIONAL\n"
+		}
+		if v.DescriptionSet {
+			commentText += "# " + v.Description + "\n"
+		}
+		if !v.Value.IsNull() {
+			commentText += "#"
+		}
+
+		commentTokens := make(hclwrite.Tokens, 1)
+		commentTokens[0] = &hclwrite.Token{
+			Type:  hclsyntax.TokenComment,
+			Bytes: []byte(commentText),
+		}
+
+		appendTokens := make(hclwrite.Tokens, 1)
+		appendTokens[0] = &hclwrite.Token{
+			Type:  hclsyntax.TokenNewline,
+			Bytes: []byte("\n"),
+		}
+
+		rootBody.AppendUnstructuredTokens(commentTokens)
 		rootBody.SetAttributeValue(v.Name, v.Value)
+		rootBody.AppendUnstructuredTokens(appendTokens)
 	}
 
 	_, err := f.WriteTo(w)
