@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	flagAutoAssign = "auto-assign"
-	flagDebug      = "debug"
-	flagEnvVar     = "env-var"
-	flagNoDefault  = "ignore-default"
-	flagVar        = "var"
-	flagVarFile    = "var-file"
+	flagAutoAssign         = "auto-assign"
+	flagDebug              = "debug"
+	flagEnableDescriptions = "enable-descriptions"
+	flagEnvVar             = "env-var"
+	flagNoDefault          = "ignore-default"
+	flagVar                = "var"
+	flagVarFile            = "var-file"
 )
 
 // New returns a new instance of cobra.Command for tfvar. Usage:
@@ -48,6 +49,7 @@ one would write it in variable definitions files (.tfvars).
 	rootCmd.PersistentFlags().BoolP(flagAutoAssign, "a", false, `Use values from environment variables TF_VAR_* and
 variable definitions files e.g. terraform.tfvars[.json] *.auto.tfvars[.json]`)
 	rootCmd.PersistentFlags().BoolP(flagDebug, "d", false, "Print debug log on stderr")
+	rootCmd.PersistentFlags().BoolP(flagEnableDescriptions, "c", false, "Enable comments containing descriptions")
 	rootCmd.PersistentFlags().BoolP(flagEnvVar, "e", false, "Print output in export TF_VAR_image_id=ami-abc123 format")
 	rootCmd.PersistentFlags().Bool(flagNoDefault, false, "Do not use defined default values")
 	rootCmd.PersistentFlags().StringArray(flagVar, []string{}, `Set a variable in the generated definitions.
@@ -137,6 +139,11 @@ func (r *runner) rootRunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	enableDescriptions, err := cmd.PersistentFlags().GetBool(flagEnableDescriptions)
+	if err != nil {
+		return errors.Wrap(err, "cmd: get flag --enable-descriptions")
+	}
+
 	fvs, err := cmd.PersistentFlags().GetStringArray(flagVar)
 	if err != nil {
 		return errors.Wrap(err, "cmd: get flag --var")
@@ -171,5 +178,5 @@ func (r *runner) rootRunE(cmd *cobra.Command, args []string) error {
 		writer = tfvar.WriteAsEnvVars
 	}
 
-	return writer(r.out, vars)
+	return writer(r.out, vars, enableDescriptions)
 }

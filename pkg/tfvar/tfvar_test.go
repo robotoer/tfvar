@@ -59,7 +59,7 @@ func TestWriteAsEnvVars(t *testing.T) {
 	sort.Slice(vars, func(i, j int) bool { return vars[i].Name < vars[j].Name })
 
 	var buf bytes.Buffer
-	assert.NoError(t, WriteAsEnvVars(&buf, vars))
+	assert.NoError(t, WriteAsEnvVars(&buf, vars, false))
 
 	expected := `export TF_VAR_availability_zone_names='["us-west-1a"]'
 export TF_VAR_instance_name='my-instance'
@@ -75,7 +75,7 @@ func TestWriteAsTFVars(t *testing.T) {
 	sort.Slice(vars, func(i, j int) bool { return vars[i].Name < vars[j].Name })
 
 	var buf bytes.Buffer
-	assert.NoError(t, WriteAsTFVars(&buf, vars))
+	assert.NoError(t, WriteAsTFVars(&buf, vars, false))
 
 	expected := `availability_zone_names = ["us-west-1a"]
 instance_name           = "my-instance"

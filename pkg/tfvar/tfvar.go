@@ -55,7 +55,7 @@ const varEnvPrefix = "TF_VAR_"
 
 // WriteAsEnvVars outputs the given vars in environment variables format, e.g.
 //    export TF_VAR_region='ap-northeast-1'
-func WriteAsEnvVars(w io.Writer, vars []Variable) error {
+func WriteAsEnvVars(w io.Writer, vars []Variable, enableDescriptions bool) error {
 	var we error
 
 	for _, v := range vars {
@@ -67,7 +67,12 @@ func WriteAsEnvVars(w io.Writer, vars []Variable) error {
 		b = bytes.TrimSuffix(b, []byte(`"`))
 
 		if we == nil {
-			_, err := fmt.Fprintf(w, "# %s\nexport %s%s='%s'\n", v.Description, varEnvPrefix, v.Name, string(b))
+			var err error
+			if enableDescriptions {
+				_, err = fmt.Fprintf(w, "# %s\nexport %s%s='%s'\n", v.Description, varEnvPrefix, v.Name, string(b))
+			} else {
+				_, err = fmt.Fprintf(w, "export %s%s='%s'\n", varEnvPrefix, v.Name, string(b))
+			}
 			we = errors.Wrap(err, "tfvar: unexpected writing export")
 		}
 	}
@@ -77,39 +82,43 @@ func WriteAsEnvVars(w io.Writer, vars []Variable) error {
 
 // WriteAsTFVars outputs the given vars in Terraform's variable definitions format, e.g.
 //    region = "ap-northeast-1"
-func WriteAsTFVars(w io.Writer, vars []Variable) error {
+func WriteAsTFVars(w io.Writer, vars []Variable, enableDescriptions bool) error {
 	f := hclwrite.NewEmptyFile()
 	rootBody := f.Body()
 
 	for _, v := range vars {
-		commentText := ""
-		if v.Value.IsNull() {
-			commentText += "## REQUIRED\n"
+		if enableDescriptions {
+			commentText := ""
+			if v.Value.IsNull() {
+				commentText += "## REQUIRED\n"
+			} else {
+				commentText += "## OPTIONAL\n"
+			}
+			if v.DescriptionSet {
+				commentText += "# " + v.Description + "\n"
+			}
+			if !v.Value.IsNull() {
+				commentText += "#"
+			}
+
+			commentTokens := make(hclwrite.Tokens, 1)
+			commentTokens[0] = &hclwrite.Token{
+				Type:  hclsyntax.TokenComment,
+				Bytes: []byte(commentText),
+			}
+
+			appendTokens := make(hclwrite.Tokens, 1)
+			appendTokens[0] = &hclwrite.Token{
+				Type:  hclsyntax.TokenNewline,
+				Bytes: []byte("\n"),
+			}
+
+			rootBody.AppendUnstructuredTokens(commentTokens)
+			rootBody.SetAttributeValue(v.Name, v.Value)
+			rootBody.AppendUnstructuredTokens(appendTokens)
 		} else {
-			commentText += "## OPTIONAL\n"
+			rootBody.SetAttributeValue(v.Name, v.Value)
 		}
-		if v.DescriptionSet {
-			commentText += "# " + v.Description + "\n"
-		}
-		if !v.Value.IsNull() {
-			commentText += "#"
-		}
-
-		commentTokens := make(hclwrite.Tokens, 1)
-		commentTokens[0] = &hclwrite.Token{
-			Type:  hclsyntax.TokenComment,
-			Bytes: []byte(commentText),
-		}
-
-		appendTokens := make(hclwrite.Tokens, 1)
-		appendTokens[0] = &hclwrite.Token{
-			Type:  hclsyntax.TokenNewline,
-			Bytes: []byte("\n"),
-		}
-
-		rootBody.AppendUnstructuredTokens(commentTokens)
-		rootBody.SetAttributeValue(v.Name, v.Value)
-		rootBody.AppendUnstructuredTokens(appendTokens)
 	}
 
 	_, err := f.WriteTo(w)
