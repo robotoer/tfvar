@@ -55,8 +55,15 @@ const varEnvPrefix = "TF_VAR_"
 
 // WriteAsEnvVars outputs the given vars in environment variables format, e.g.
 //    export TF_VAR_region='ap-northeast-1'
-func WriteAsEnvVars(w io.Writer, vars []Variable, enableDescriptions bool) error {
+func WriteAsEnvVars(w io.Writer, vars []Variable, header string, enableDescriptions bool) error {
 	var we error
+
+	if header != "" {
+		_, err := fmt.Fprintf(w, "%s\n\n", header)
+		if err != nil {
+			we = errors.Wrap(err, "tfvar: unexpected writing export")
+		}
+	}
 
 	for _, v := range vars {
 		val := convertNull(v.Value)
@@ -73,7 +80,9 @@ func WriteAsEnvVars(w io.Writer, vars []Variable, enableDescriptions bool) error
 			} else {
 				_, err = fmt.Fprintf(w, "export %s%s='%s'\n", varEnvPrefix, v.Name, string(b))
 			}
-			we = errors.Wrap(err, "tfvar: unexpected writing export")
+			if err != nil {
+				we = errors.Wrap(err, "tfvar: unexpected writing export")
+			}
 		}
 	}
 
@@ -82,9 +91,14 @@ func WriteAsEnvVars(w io.Writer, vars []Variable, enableDescriptions bool) error
 
 // WriteAsTFVars outputs the given vars in Terraform's variable definitions format, e.g.
 //    region = "ap-northeast-1"
-func WriteAsTFVars(w io.Writer, vars []Variable, enableDescriptions bool) error {
+func WriteAsTFVars(w io.Writer, vars []Variable, header string, enableDescriptions bool) error {
 	f := hclwrite.NewEmptyFile()
 	rootBody := f.Body()
+
+	if header != "" {
+		headerTokens := makeCommentTokens(header + "\n\n")
+		rootBody.AppendUnstructuredTokens(headerTokens)
+	}
 
 	for _, v := range vars {
 		if enableDescriptions {
@@ -100,18 +114,8 @@ func WriteAsTFVars(w io.Writer, vars []Variable, enableDescriptions bool) error 
 			if !v.Value.IsNull() {
 				commentText += "#"
 			}
-
-			commentTokens := make(hclwrite.Tokens, 1)
-			commentTokens[0] = &hclwrite.Token{
-				Type:  hclsyntax.TokenComment,
-				Bytes: []byte(commentText),
-			}
-
-			appendTokens := make(hclwrite.Tokens, 1)
-			appendTokens[0] = &hclwrite.Token{
-				Type:  hclsyntax.TokenNewline,
-				Bytes: []byte("\n"),
-			}
+			commentTokens := makeCommentTokens(commentText)
+			appendTokens := makeNewlineTokens()
 
 			rootBody.AppendUnstructuredTokens(commentTokens)
 			rootBody.SetAttributeValue(v.Name, v.Value)
@@ -123,6 +127,24 @@ func WriteAsTFVars(w io.Writer, vars []Variable, enableDescriptions bool) error 
 
 	_, err := f.WriteTo(w)
 	return errors.Wrap(err, "tfvar: failed to write as tfvars")
+}
+
+func makeCommentTokens(text string) hclwrite.Tokens {
+	commentTokens := make(hclwrite.Tokens, 1)
+	commentTokens[0] = &hclwrite.Token{
+		Type:  hclsyntax.TokenComment,
+		Bytes: []byte(text),
+	}
+	return commentTokens
+}
+
+func makeNewlineTokens() hclwrite.Tokens {
+	appendTokens := make(hclwrite.Tokens, 1)
+	appendTokens[0] = &hclwrite.Token{
+		Type:  hclsyntax.TokenNewline,
+		Bytes: []byte("\n"),
+	}
+	return appendTokens
 }
 
 func convertNull(v cty.Value) cty.Value {

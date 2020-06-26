@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"io"
+	"io/ioutil"
 	"sort"
 
 	"github.com/cockroachdb/errors"
@@ -16,6 +17,7 @@ const (
 	flagDebug              = "debug"
 	flagEnableDescriptions = "enable-descriptions"
 	flagEnvVar             = "env-var"
+	flagHeaderFile         = "header-file"
 	flagNoDefault          = "ignore-default"
 	flagVar                = "var"
 	flagVarFile            = "var-file"
@@ -51,6 +53,7 @@ variable definitions files e.g. terraform.tfvars[.json] *.auto.tfvars[.json]`)
 	rootCmd.PersistentFlags().BoolP(flagDebug, "d", false, "Print debug log on stderr")
 	rootCmd.PersistentFlags().BoolP(flagEnableDescriptions, "c", false, "Enable comments containing descriptions")
 	rootCmd.PersistentFlags().BoolP(flagEnvVar, "e", false, "Print output in export TF_VAR_image_id=ami-abc123 format")
+	rootCmd.PersistentFlags().String(flagHeaderFile, "", "Set header file to prepend to output.")
 	rootCmd.PersistentFlags().Bool(flagNoDefault, false, "Do not use defined default values")
 	rootCmd.PersistentFlags().StringArray(flagVar, []string{}, `Set a variable in the generated definitions.
 This flag can be set multiple times.`)
@@ -171,6 +174,20 @@ func (r *runner) rootRunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	headerFile, err := cmd.PersistentFlags().GetString(flagHeaderFile)
+	if err != nil {
+		return errors.Wrap(err, "cmd: get flag --header-file")
+	}
+
+	header := ""
+	if headerFile != "" {
+		headerBytes, err := ioutil.ReadFile(headerFile)
+		if err != nil {
+			return errors.Errorf("tfvar: reading file '%s'", headerFile)
+		}
+		header = string(headerBytes)
+	}
+
 	writer := tfvar.WriteAsTFVars
 
 	if isEnvVar {
@@ -178,5 +195,5 @@ func (r *runner) rootRunE(cmd *cobra.Command, args []string) error {
 		writer = tfvar.WriteAsEnvVars
 	}
 
-	return writer(r.out, vars, enableDescriptions)
+	return writer(r.out, vars, header, enableDescriptions)
 }
